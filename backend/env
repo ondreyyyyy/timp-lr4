@@ -1,2 +1,0 @@
-SECRET_KEY="super-secret-key-security-hub"
-DATABASE_URL="postgresql://nvrff:nvrff@localhost:5432/securityhub"

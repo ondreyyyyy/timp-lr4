@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: 'http://localhost:8000', 
+    baseURL: '/api', 
 });
 
 let isRedirecting = false; 
@@ -26,7 +26,7 @@ api.interceptors.response.use(
         if (error.response?.status === 401 && !originalRequest._retry && originalRequest.url !== '/login') {
             originalRequest._retry = true;
             try {
-                const res = await axios.post('http://localhost:8000/refresh', {}, {
+                const res = await axios.post('/api/refresh', {}, {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                 });
                 
