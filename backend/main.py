@@ -384,12 +384,12 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 
     try:
         send_2fa_email(user.email, code)
-    except Exception as exc:
+    except Exception:
         db.delete(db_code)
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Не удалось отправить код подтверждения: {exc}"
+            detail="Не удалось отправить код подтверждения. Проверьте настройки почты."
         )
 
     return {

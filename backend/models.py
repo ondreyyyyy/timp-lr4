@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, Date, Time, DateTime, ForeignKey, CheckConstraint
+from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -28,7 +28,7 @@ class Login2FACode(Base):
     id_code = Column(Integer, primary_key=True, index=True)
     id_s = Column(Integer, ForeignKey("staff.id_s", ondelete="CASCADE"), nullable=False, index=True)
     code_hash = Column(String(255), nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
 
