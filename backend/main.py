@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import timedelta, datetime, timezone
+import logging
+import smtplib
 
 import models
 import schemas
@@ -27,6 +29,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"], 
 )
+
+logger = logging.getLogger(__name__)
 
 def ensure_security_assignee_access(current_user: models.Staff, incident: models.Incident):
     if current_user.role == "security" and incident.id_s != current_user.id_s:
@@ -386,7 +390,8 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 
     try:
         send_2fa_email(user.email, code)
-    except Exception:
+    except (smtplib.SMTPException, OSError, RuntimeError) as exc:
+        logger.exception("Ошибка отправки 2FA-кода для пользователя %s: %s", user.login, exc)
         db.delete(db_code)
         db.commit()
         raise HTTPException(

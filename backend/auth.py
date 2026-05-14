@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import random
+import secrets
 import smtplib
 from email.message import EmailMessage
 import jwt
@@ -48,7 +48,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 def generate_2fa_code() -> str:
-    return f"{random.randint(0, 999999):06d}"
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 def send_2fa_email(email_to: str, code: str) -> None:
     smtp_host = os.getenv("SMTP_HOST")
@@ -60,7 +60,7 @@ def send_2fa_email(email_to: str, code: str) -> None:
     smtp_use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
 
     if not all([smtp_host, smtp_user, smtp_password, smtp_from]):
-        raise RuntimeError("SMTP не настроен. Проверьте SMTP_HOST, SMTP_USER, SMTP_PASSWORD и SMTP_FROM в .env")
+        raise RuntimeError("SMTP не настроен. Проверьте переменные окружения SMTP_HOST, SMTP_USER, SMTP_PASSWORD и SMTP_FROM")
 
     message = EmailMessage()
     message["Subject"] = "Код подтверждения входа Security Hub"

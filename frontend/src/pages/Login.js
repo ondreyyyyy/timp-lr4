@@ -29,7 +29,7 @@ export default function Login() {
                 return;
             }
 
-            setError('Не удалось начать двухфакторную проверку');
+            setError('Неожиданный ответ сервера');
         } catch (err) {
             setError(err.response?.status === 401 ? 'Неверный логин или пароль' : 'Ошибка сервера');
         }
