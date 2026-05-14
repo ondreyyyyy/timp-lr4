@@ -32,6 +32,10 @@ def ensure_security_assignee_access(current_user: models.Staff, incident: models
     if current_user.role == "security" and incident.id_s != current_user.id_s:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к инциденту запрещен")
 
+def ensure_security_assignee_match(current_user: models.Staff, assignee_id: int):
+    if current_user.role == "security" and assignee_id != current_user.id_s:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Охрана может назначать только себя")
+
 @app.post("/objects/", response_model=schemas.ObjectResponse, status_code=status.HTTP_201_CREATED)
 def create_object(obj: schemas.ObjectCreate, db: Session = Depends(get_db), current_user: models.Staff = Depends(get_current_user)):
     db_obj = models.Object(**obj.model_dump())
@@ -192,8 +196,7 @@ def delete_resp_measure(rm_id: int, db: Session = Depends(get_db), current_user:
 
 @app.post("/incidents/", response_model=schemas.IncidentResponse, status_code=status.HTTP_201_CREATED)
 def create_incident(inc: schemas.IncidentCreate, db: Session = Depends(get_db), current_user: models.Staff = Depends(get_current_user)):
-    if current_user.role == "security" and inc.id_s != current_user.id_s:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Охрана может создавать только свои инциденты")
+    ensure_security_assignee_match(current_user, inc.id_s)
     db_inc = models.Incident(**inc.model_dump())
     db.add(db_inc)
     db.commit()
@@ -231,8 +234,7 @@ def update_incident(inc_id: int, inc: schemas.IncidentCreate, db: Session = Depe
     if not db_inc:
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_security_assignee_access(current_user, db_inc)
-    if current_user.role == "security" and inc.id_s != current_user.id_s:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Охрана может назначать только себя")
+    ensure_security_assignee_match(current_user, inc.id_s)
     for key, value in inc.model_dump().items():
         setattr(db_inc, key, value)
     db.commit()

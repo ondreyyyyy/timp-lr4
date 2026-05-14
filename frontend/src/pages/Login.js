@@ -48,6 +48,10 @@ export default function Login() {
         }
     };
 
+    const handleCodeChange = (e) => {
+        setCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+    };
+
     const inputStyle = { padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%', boxSizing: 'border-box' };
 
     return (
@@ -65,7 +69,7 @@ export default function Login() {
                 ) : (
                     <form onSubmit={handleCodeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                         <input type="text" value={pendingLogin} disabled style={{ ...inputStyle, background: '#f1f5f9' }}/>
-                        <input type="text" placeholder="Код из email" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required maxLength={6} inputMode="numeric" autoComplete="one-time-code" style={inputStyle}/>
+                        <input type="text" placeholder="Код из email" value={code} onChange={handleCodeChange} required maxLength={6} inputMode="numeric" autoComplete="one-time-code" style={inputStyle}/>
                         <button type="submit" style={{ padding: '12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', marginTop: '10px' }}>Подтвердить вход</button>
                         <button type="button" onClick={() => { setIs2FAStep(false); setCode(''); setInfo(''); }} style={{ padding: '12px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Назад</button>
                     </form>
