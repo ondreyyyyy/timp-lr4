@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Text, Date, Time, ForeignKey, CheckConstraint
+from sqlalchemy import Column, Integer, String, Text, Date, Time, DateTime, ForeignKey, CheckConstraint
+from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -21,6 +22,15 @@ class Staff(Base):
     password_hash = Column(String(255), nullable=False)
     email = Column(String(100), unique=True, nullable=False)
     role = Column(String(50), nullable=False, default="user")
+
+class Login2FACode(Base):
+    __tablename__ = "login_2fa_code"
+    id_code = Column(Integer, primary_key=True, index=True)
+    id_s = Column(Integer, ForeignKey("staff.id_s", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
 
 class VulnerabilityType(Base):
     __tablename__ = "vulnerability_type"

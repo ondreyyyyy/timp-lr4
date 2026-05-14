@@ -7,6 +7,7 @@ export default function Incidents() {
     const canEdit = currentUser.role === 'admin' || currentUser.role === 'security';
 
     const [incidents, setIncidents] = useState([]);
+    const [overdueIncidents, setOverdueIncidents] = useState([]);
     const [objectsMap, setObjectsMap] = useState({});
     const [staffMap, setStaffMap] = useState({});
     
@@ -27,6 +28,7 @@ export default function Incidents() {
     useEffect(() => { 
         fetchLookups();
         fetchIncidents(); 
+        fetchOverdueIncidents();
     }, [page, filterThreat, filterState]);
 
     const fetchLookups = async () => {
@@ -67,6 +69,15 @@ export default function Incidents() {
         setIsLoading(false);
     };
 
+    const fetchOverdueIncidents = async () => {
+        try {
+            const res = await api.get('/incidents/overdue');
+            setOverdueIncidents(Array.isArray(res.data) ? res.data : []);
+        } catch (err) {
+            setOverdueIncidents([]);
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setModalError('');
@@ -105,6 +116,11 @@ export default function Incidents() {
     return (
         <div style={{ background: 'white', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
             <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+            {overdueIncidents.length > 0 && (
+                <div style={{ marginBottom: '20px', padding: '14px', borderRadius: '10px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b' }}>
+                    Внимание: обнаружены инциденты с реагированием дольше 24 часов ({overdueIncidents.map(i => `#${i.id_inc}`).join(', ')}).
+                </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h2 style={{ margin: 0, color: '#0f172a' }}>Журнал инцидентов</h2>
                 <div style={{ display: 'flex', gap: '15px' }}>
