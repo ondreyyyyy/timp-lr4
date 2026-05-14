@@ -119,3 +119,12 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     login: Optional[str] = None
+
+class Login2FAInitResponse(BaseModel):
+    two_factor_required: bool = True
+    login: str
+    detail: str
+
+class Login2FAVerifyRequest(BaseModel):
+    login: str
+    code: str = Field(..., min_length=6, max_length=6)

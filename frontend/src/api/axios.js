@@ -23,7 +23,7 @@ api.interceptors.response.use(
             return Promise.reject(error);
         }
 
-        if (error.response?.status === 401 && !originalRequest._retry && originalRequest.url !== '/login') {
+        if (error.response?.status === 401 && !originalRequest._retry && originalRequest.url !== '/login' && originalRequest.url !== '/login/verify') {
             originalRequest._retry = true;
             try {
                 const res = await axios.post('/api/refresh', {}, {
@@ -53,7 +53,7 @@ api.interceptors.response.use(
             return Promise.reject(error);
         }
 
-        if (error.response && !(error.response.status === 401 && originalRequest.url === '/login')) {
+        if (error.response && !(error.response.status === 401 && (originalRequest.url === '/login' || originalRequest.url === '/login/verify'))) {
             const errorMsg = error.response.data?.detail || `Ошибка сервера: ${error.response.status}`;
             window.dispatchEvent(new CustomEvent('app_error', { detail: errorMsg }));
         } else if (!error.response) {

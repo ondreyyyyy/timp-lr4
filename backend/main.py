@@ -1,18 +1,19 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from auth import get_current_user
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import timedelta, datetime, timezone
 
 import models
 import schemas
 from database import engine, get_db
+from incident_utils import is_incident_overdue
 
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
 from auth import (
     get_password_hash, verify_password, create_access_token,
-    get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
+    get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, generate_2fa_code,
+    send_2fa_email, TWO_FACTOR_CODE_EXPIRE_MINUTES
 )
 
 models.Base.metadata.create_all(bind=engine)
@@ -26,6 +27,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"], 
 )
+
+def ensure_security_assignee_access(current_user: models.Staff, incident: models.Incident):
+    if current_user.role == "security" and incident.id_s != current_user.id_s:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к инциденту запрещен")
 
 @app.post("/objects/", response_model=schemas.ObjectResponse, status_code=status.HTTP_201_CREATED)
 def create_object(obj: schemas.ObjectCreate, db: Session = Depends(get_db), current_user: models.Staff = Depends(get_current_user)):
@@ -187,6 +192,8 @@ def delete_resp_measure(rm_id: int, db: Session = Depends(get_db), current_user:
 
 @app.post("/incidents/", response_model=schemas.IncidentResponse, status_code=status.HTTP_201_CREATED)
 def create_incident(inc: schemas.IncidentCreate, db: Session = Depends(get_db), current_user: models.Staff = Depends(get_current_user)):
+    if current_user.role == "security" and inc.id_s != current_user.id_s:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Охрана может создавать только свои инциденты")
     db_inc = models.Incident(**inc.model_dump())
     db.add(db_inc)
     db.commit()
@@ -195,13 +202,27 @@ def create_incident(inc: schemas.IncidentCreate, db: Session = Depends(get_db), 
 
 @app.get("/incidents/", response_model=List[schemas.IncidentResponse], status_code=status.HTTP_200_OK)
 def read_incidents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.Staff = Depends(get_current_user)):
-    return db.query(models.Incident).offset(skip).limit(limit).all()
+    query = db.query(models.Incident)
+    if current_user.role == "security":
+        query = query.filter(models.Incident.id_s == current_user.id_s)
+    return query.offset(skip).limit(limit).all()
+
+@app.get("/incidents/overdue", response_model=List[schemas.IncidentResponse], status_code=status.HTTP_200_OK)
+def read_overdue_incidents(db: Session = Depends(get_db), current_user: models.Staff = Depends(get_current_user)):
+    query = db.query(models.Incident)
+    if current_user.role == "security":
+        query = query.filter(models.Incident.id_s == current_user.id_s)
+
+    incidents = query.all()
+    now = datetime.now(timezone.utc)
+    return [inc for inc in incidents if is_incident_overdue(inc.inc_date, inc.inc_time, inc.state, now)]
 
 @app.get("/incidents/{inc_id}", response_model=schemas.IncidentResponse, status_code=status.HTTP_200_OK)
 def read_incident(inc_id: int, db: Session = Depends(get_db), current_user: models.Staff = Depends(get_current_user)):
     db_inc = db.query(models.Incident).filter(models.Incident.id_inc == inc_id).first()
     if not db_inc:
         raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_security_assignee_access(current_user, db_inc)
     return db_inc
 
 @app.put("/incidents/{inc_id}", response_model=schemas.IncidentResponse, status_code=status.HTTP_200_OK)
@@ -209,6 +230,9 @@ def update_incident(inc_id: int, inc: schemas.IncidentCreate, db: Session = Depe
     db_inc = db.query(models.Incident).filter(models.Incident.id_inc == inc_id).first()
     if not db_inc:
         raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_security_assignee_access(current_user, db_inc)
+    if current_user.role == "security" and inc.id_s != current_user.id_s:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Охрана может назначать только себя")
     for key, value in inc.model_dump().items():
         setattr(db_inc, key, value)
     db.commit()
@@ -220,6 +244,7 @@ def delete_incident(inc_id: int, db: Session = Depends(get_db), current_user: mo
     db_inc = db.query(models.Incident).filter(models.Incident.id_inc == inc_id).first()
     if not db_inc:
         raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_security_assignee_access(current_user, db_inc)
     db.delete(db_inc)
     db.commit()
     return None
@@ -331,7 +356,7 @@ def register_user(staff: schemas.StaffCreate, db: Session = Depends(get_db)):
     
     return db_staff
 
-@app.post("/login", response_model=schemas.Token)
+@app.post("/login", response_model=schemas.Login2FAInitResponse)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.Staff).filter(models.Staff.login == form_data.username).first()
     
@@ -341,7 +366,59 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
             detail="Неверный логин или пароль",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    db.query(models.Login2FACode).filter(
+        models.Login2FACode.id_s == user.id_s,
+        models.Login2FACode.used_at.is_(None)
+    ).delete(synchronize_session=False)
+
+    code = generate_2fa_code()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=TWO_FACTOR_CODE_EXPIRE_MINUTES)
+    db_code = models.Login2FACode(
+        id_s=user.id_s,
+        code_hash=get_password_hash(code),
+        expires_at=expires_at
+    )
+    db.add(db_code)
+    db.commit()
+
+    try:
+        send_2fa_email(user.email, code)
+    except Exception as exc:
+        db.delete(db_code)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Не удалось отправить код подтверждения: {exc}"
+        )
+
+    return {
+        "two_factor_required": True,
+        "login": user.login,
+        "detail": "Код подтверждения отправлен на вашу почту"
+    }
+
+@app.post("/login/verify", response_model=schemas.Token)
+def verify_login_2fa(payload: schemas.Login2FAVerifyRequest, db: Session = Depends(get_db)):
+    user = db.query(models.Staff).filter(models.Staff.login == payload.login).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный код или логин")
+
+    code_record = db.query(models.Login2FACode).filter(
+        models.Login2FACode.id_s == user.id_s,
+        models.Login2FACode.used_at.is_(None)
+    ).order_by(models.Login2FACode.created_at.desc()).first()
+
+    if not code_record:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Код подтверждения не найден")
+
+    now = datetime.now(timezone.utc)
+    if code_record.expires_at < now or not verify_password(payload.code, code_record.code_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный или просроченный код")
+
+    code_record.used_at = now
+    db.commit()
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.login, "role": user.role}, expires_delta=access_token_expires

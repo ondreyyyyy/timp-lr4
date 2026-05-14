@@ -2,6 +2,9 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import random
+import smtplib
+from email.message import EmailMessage
 import jwt
 import bcrypt
 from fastapi import Depends, HTTPException, status
@@ -18,6 +21,7 @@ if not SECRET_KEY:
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+TWO_FACTOR_CODE_EXPIRE_MINUTES = int(os.getenv("TWO_FACTOR_CODE_EXPIRE_MINUTES", "10"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -42,6 +46,42 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+def generate_2fa_code() -> str:
+    return f"{random.randint(0, 999999):06d}"
+
+def send_2fa_email(email_to: str, code: str) -> None:
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    smtp_from = os.getenv("SMTP_FROM", smtp_user)
+    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    smtp_use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+
+    if not all([smtp_host, smtp_user, smtp_password, smtp_from]):
+        raise RuntimeError("SMTP не настроен. Проверьте SMTP_HOST, SMTP_USER, SMTP_PASSWORD и SMTP_FROM в .env")
+
+    message = EmailMessage()
+    message["Subject"] = "Код подтверждения входа Security Hub"
+    message["From"] = smtp_from
+    message["To"] = email_to
+    message.set_content(
+        f"Ваш код подтверждения: {code}\n"
+        f"Код действителен {TWO_FACTOR_CODE_EXPIRE_MINUTES} минут.\n"
+        "Если это были не вы, срочно смените пароль."
+    )
+
+    if smtp_use_ssl:
+        with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as smtp:
+            smtp.login(smtp_user, smtp_password)
+            smtp.send_message(message)
+    else:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
+            if smtp_use_tls:
+                smtp.starttls()
+            smtp.login(smtp_user, smtp_password)
+            smtp.send_message(message)
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
